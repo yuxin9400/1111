@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>麥塊太空殺 3D 建造遊戲 (Minecraft Sus Creator)</title>
+    <!-- Tailwind CSS 用於現代化 UI 介面 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js 核心庫 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- PointerLockControls 用於第一人稱滑鼠鎖定與移動 -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            mix-blend-mode: difference;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: white;
+        }
+        #crosshair::before {
+            top: 7px; left: 0; width: 16px; height: 2px;
+        }
+        #crosshair::after {
+            top: 0; left: 7px; width: 2px; height: 16px;
+        }
+        /* 麥塊經典快捷列容器 */
+        .mc-hotbar {
+            background: rgba(85, 85, 85, 0.85);
+            border: 4px solid #3c3c3c;
+            box-shadow: inset 4px 4px 0px rgba(255,255,255,0.2), inset -4px -4px 0px rgba(0,0,0,0.4);
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 select-none">
+
+    <!-- 遊戲頂端左側 UI：操作說明 -->
+    <div class="absolute top-4 left-4 z-10 bg-black/60 backdrop-blur-md p-4 rounded-2xl border border-white/10 max-w-sm pointer-events-auto shadow-xl">
+        <h1 class="text-lg font-bold flex items-center gap-2 text-emerald-400 font-mono tracking-wider">
+            ⛏️ SUS CRAFT 3D <span class="text-[9px] bg-red-500 text-white px-2 py-0.5 rounded-full animate-pulse">PRO</span>
+        </h1>
+        
+        <!-- 操作說明 -->
+        <div class="mt-3 text-xs space-y-1.5 text-slate-300 border-t border-white/10 pt-2 font-medium">
+            <div><span class="text-emerald-400 font-bold">WASD</span> : 移動 (<span class="text-sky-300">一格障礙自動跳躍 ⇧</span>)</div>
+            <div><span class="text-emerald-400 font-bold">Space (空白鍵)</span> : 跳躍 / <span class="text-sky-300">海中向上游泳 🏊</span></div>
+            <div><span class="text-emerald-400 font-bold">Left Shift</span> : 按住「下蹲潛行」/ 飛行時下降</div>
+            <div><span class="text-emerald-400 font-bold">F 鍵</span> : 開啟/關閉 飛行模式 ✈️</div>
+            <div><span class="text-emerald-400 font-bold">M 鍵</span> : <span class="text-amber-400 font-bold">開啟/靜音 背景音樂 🎵</span></div>
+            <div><span class="text-emerald-400 font-bold">滑鼠左鍵</span> : 放置方塊 / 揮鎬</div>
+            <div><span class="text-emerald-400 font-bold">滑鼠右鍵 (長按)</span> : 揮鎬拆除方塊</div>
+            <div><span class="text-emerald-400 font-bold">數字鍵 1-9</span> : 快速切換方塊種類</div>
+        </div>
+    </div>
+
+    <!-- 遊戲頂端右側 UI：生態與水域狀態 -->
+    <div class="absolute top-4 right-4 z-10 bg-black/60 backdrop-blur-md p-4 rounded-2xl border border-white/10 text-right pointer-events-auto shadow-xl">
+        <div class="text-sm font-bold text-emerald-400 font-mono">🌍 世界生態模擬</div>
+        <div class="text-xs text-slate-300 mt-1">內建橡木林、海洋區與動態晝夜交替。</div>
+        <div class="text-xs text-sky-300 mt-0.5 font-semibold">潛入水中會觸發水底視覺與 muffled 音效！</div>
+        <div class="mt-2 flex gap-1.5 justify-end">
+            <button onclick="selectBlock(8)" class="px-3 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold transition shadow-md active:scale-95">
+                召喚紅船員 (8)
+            </button>
+            <button onclick="selectBlock(9)" class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition shadow-md active:scale-95">
+                召喚藍船員 (9)
+            </button>
+        </div>
+    </div>
+
+    <!-- 水底視覺特效疊加層 (預設隱藏) -->
+    <div id="underwater-overlay" class="absolute inset-0 z-15 bg-sky-800/40 backdrop-blur-[0.5px] pointer-events-none hidden transition-all duration-500">
+        <!-- 水底氣泡氛圍 -->
+        <div class="absolute inset-0 flex items-center justify-center opacity-20 pointer-events-none">
+            <div class="text-9xl">🫧</div>
+        </div>
+    </div>
+
+    <!-- 滑鼠未鎖定時的覆蓋遮罩 (Start Screen) -->
+    <div id="blocker" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-md text-center transition-opacity duration-300">
+        <div class="p-8 bg-slate-900 border border-white/10 rounded-3xl shadow-2xl max-w-lg mx-4">
+            <div class="text-6xl mb-4 animate-bounce">⛏️</div>
+            <h2 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-sky-400 tracking-wider">
+                MINECRAFT SUS
+            </h2>
+            <p class="text-slate-400 mt-3 mb-6 leading-relaxed text-sm font-medium">
+                向正統麥塊看齊的極致更新！<br>
+                擁有<b>自然晝夜交替</b>、<b>水底模擬</b>、<b>程序合成音效</b>與<b>自動跳躍</b>。
+            </p>
+            <button id="playBtn" class="px-12 py-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-black text-lg rounded-xl shadow-lg hover:scale-105 active:scale-95 transition-all tracking-widest uppercase">
+                開啟 3D 世界
+            </button>
+            <div class="text-[10px] text-slate-500 mt-4">
+                提示：若您的瀏覽器限制了滑鼠鎖定，您依然可以點擊按鈕直接進入世界遊玩！
+            </div>
+        </div>
+    </div>
+
+    <!-- 麥塊經典方塊名稱動態提示 -->
+    <div id="active-item-text" class="absolute bottom-28 left-1/2 -translate-x-1/2 text-white font-bold text-sm bg-black/60 px-4 py-1.5 rounded-lg pointer-events-none opacity-0 transition-opacity duration-300 z-10 font-mono border border-white/5">
+        草方塊
+    </div>
+
+    <!-- 底部方塊選擇器 (Hotbar) -->
+    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 mc-hotbar p-1.5 rounded-none flex gap-1 items-center shadow-2xl pointer-events-auto">
+        <div id="hotbar" class="flex gap-1">
+            <!-- 動態插入方塊選項 -->
+        </div>
+    </div>
+
+    <!-- 畫面中心十字準星 -->
+    <div id="crosshair"></div>
+
+    <!-- 長按挖掘進度環 (環形 SVG) -->
+    <div id="break-progress-container" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 pointer-events-none hidden flex items-center justify-center z-10">
+        <svg class="w-full h-full transform -rotate-90">
+            <circle cx="28" cy="28" r="16" stroke="rgba(255,255,255,0.2)" stroke-width="3" fill="transparent"/>
+            <circle id="break-progress-circle" cx="28" cy="28" r="16" stroke="#fbbf24" stroke-width="4" fill="transparent" stroke-linecap="round" stroke-dasharray="100.5" stroke-dashoffset="100.5"/>
+        </svg>
+    </div>
+
+    <!-- 系統通知訊息元件 -->
+    <div id="toast" class="absolute bottom-24 left-1/2 -translate-x-1/2 z-10 bg-black/80 border border-white/10 text-white font-bold text-xs px-5 py-2.5 rounded-xl opacity-0 pointer-events-none transition-opacity duration-300 shadow-md">
+        訊息提示
+    </div>
+
+    <!-- 3D 渲染容器 -->
+    <div id="game-container" class="w-full h-full"></div>
+
+    <script>
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'minecraft-sus';
+        let scene, camera, renderer, controls;
+        let blocks = {}; // 以 'x,y,z' 為鍵儲存方塊資料
+        let keysPressed = {};
+        
+        let blocker; 
+        let playBtn;
+
+        // 音訊系統相關變數
+        let audioCtx = null;
+        let musicStarted = false;
+        let isMusicMuted = false;
+        let masterGainNode = null;
+        let musicLowpassFilter = null; // 用於水底 muffled 音效控制的濾波器
+        let lastFootstepTime = 0; // 控制腳步聲頻率
+
+        // 玩家物理與狀態變數
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        let canJump = false;
+        let jumpCount = 0; 
+        const maxJumps = 2;
+        let playerHeight = 1.6; 
+        const playerRadius = 0.35;
+        let prevTime = performance.now();
+
+        // 麥塊經典功能狀態
+        let isFlying = false; 
+        let isSneaking = false; 
+        let selectionBox; 
+        let isInWater = false; // 是否腳踩在水中
+        let isHeadInWater = false; // 是否頭部（視角）在水中
+
+        // 動態晝夜交替系統變數
+        let dayTime = 0.25; // 0.0 ~ 1.0 (0.25 代表正午)
+        let dirLight; // 太陽光
+        const dayLength = 120; // 完整一天長度 (秒)
+
+        // 拆除方塊與 3D 像素稿相關
+        let isRightMouseDown = false;
+        let currentlyBreakingKey = null;
+        let breakProgress = 0;
+        const breakDuration = 0.45; // 優化：開採更俐落迅速
+        let pickaxeGroup; 
+        let isSwinging = false;
+        let swingStartTime = 0;
+
+        // 碎屑粒子與快取材質系統（效能優化核心）
+        let activeParticles = [];
+        let cachedMaterials = {}; 
+        let blockGeometry; // 全域共享方塊幾何體，節省大量的 CPU 記憶體分配！
+        let particleGeometry; // 全域共享粒子幾何體
+
+        // 麥塊經典風格方塊定義 (樹葉與水)
+        const blockTypes = [
+            { id: 1, name: '草方塊', color: 0x5b8731, rough: 0.9, isSus: false },
+            { id: 2, name: '泥土', color: 0x866043, rough: 0.95, isSus: false },
+            { id: 3, name: '石頭', color: 0x7d7d7d, rough: 0.8, isSus: false },
+            { id: 4, name: '橡木', color: 0x735135, rough: 0.85, isSus: false },
+            { id: 5, name: '玻璃', color: 0xe0f2fe, rough: 0.1, opacity: 0.5, transparent: true, isSus: false },
+            { id: 6, name: '金塊', color: 0xf1c40f, rough: 0.3, isSus: false },
+            { id: 7, name: '黑曜石', color: 0x1a1126, rough: 0.5, isSus: false },
+            { id: 8, name: '紅色船員', color: 0xef4444, isSus: true, susColor: 0xef4444 },
+            { id: 9, name: '藍色船員', color: 0x3b82f6, isSus: true, susColor: 0x3b82f6 },
+            { id: 10, name: '樹葉', color: 0x2d7d3d, rough: 0.95, isSus: false },
+            { id: 11, name: '水方塊', color: 0x2e6fdb, rough: 0.1, opacity: 0.65, transparent: true, isSus: false }
+        ];
+
+        let selectedBlockIndex = 0;
+
+        const hotbarEl = document.getElementById('hotbar');
+        function renderHotbar() {
+            hotbarEl.innerHTML = '';
+            blockTypes.forEach((type, index) => {
+                const isSelected = index === selectedBlockIndex;
+                const btn = document.createElement('button');
+                // 經典麥塊快捷格線條與陰影
+                btn.className = `w-12 h-12 flex flex-col items-center justify-center transition-all relative flex-shrink-0
+                    ${isSelected ? 'border-4 border-white bg-slate-400/50 scale-110 z-10 shadow-lg' : 'border-2 border-transparent bg-transparent hover:bg-slate-300/20'}`;
+                
+                const colorBox = document.createElement('div');
+                colorBox.className = "w-7 h-7 rounded shadow-inner border border-black/30";
+                colorBox.style.backgroundColor = `#${type.color.toString(16).padStart(6, '0')}`;
+                if (type.isSus) {
+                    colorBox.className += " animate-pulse border border-red-400";
+                }
+                btn.appendChild(colorBox);
+
+                const numKey = document.createElement('span');
+                numKey.className = "absolute bottom-0.5 right-1 text-[9px] font-black font-mono text-white drop-shadow-[1px_1px_0px_rgba(0,0,0,0.8)]";
+                numKey.innerText = index + 1 <= 9 ? index + 1 : (index + 1 === 10 ? '0' : '-');
+                btn.appendChild(numKey);
+
+                btn.onclick = () => selectBlock(index + 1);
+                hotbarEl.appendChild(btn);
+            });
+        }
+
+        // 切換快捷列方塊，並顯示經典麥塊動態方塊名稱
+        function selectBlock(id) {
+            selectedBlockIndex = id - 1;
+            renderHotbar();
+            
+            // 撥放切換音效 (輕柔高頻點擊)
+            playProceduralSFX('click');
+
+            // 觸發麥塊式 HUD 名稱漸現
+            const textIndicator = document.getElementById('active-item-text');
+            textIndicator.innerText = blockTypes[selectedBlockIndex].name;
+            textIndicator.style.opacity = '1';
+            clearTimeout(textIndicator.timeout);
+            textIndicator.timeout = setTimeout(() => {
+                textIndicator.style.opacity = '0';
+            }, 1500);
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.style.opacity = '1';
+            clearTimeout(toast.timeout);
+            toast.timeout = setTimeout(() => {
+                toast.style.opacity = '0';
+            }, 1800);
+        }
+
+        function generateMinecraftTexture(type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 16;
+            canvas.height = 16;
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+
+            if (type === 'dirt') {
+                ctx.fillStyle = '#866043';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#5c402c';
+                ctx.fillRect(2, 2, 4, 4);
+                ctx.fillRect(10, 8, 4, 4);
+                ctx.fillRect(1, 11, 3, 3);
+                ctx.fillStyle = '#9b7155';
+                ctx.fillRect(8, 1, 3, 3);
+            } else if (type === 'stone') {
+                ctx.fillStyle = '#7d7d7d';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#575757';
+                ctx.fillRect(0, 0, 16, 2);
+                ctx.fillRect(0, 0, 2, 16);
+                ctx.fillRect(8, 8, 4, 4);
+                ctx.fillStyle = '#a3a3a3';
+                ctx.fillRect(2, 2, 6, 6);
+            } else if (type === 'grass_top') {
+                ctx.fillStyle = '#5b8731';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#4c7229';
+                ctx.fillRect(0, 0, 4, 4);
+                ctx.fillRect(10, 2, 4, 4);
+                ctx.fillStyle = '#669638';
+                ctx.fillRect(4, 4, 4, 4);
+            } else if (type === 'grass_side') {
+                ctx.fillStyle = '#866043';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#5b8731';
+                ctx.fillRect(0, 0, 16, 4);
+                ctx.fillRect(2, 4, 2, 3);
+                ctx.fillRect(11, 4, 2, 2);
+            } else if (type === 'wood') {
+                ctx.fillStyle = '#735135';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#4d331f';
+                ctx.fillRect(2, 0, 2, 16);
+                ctx.fillRect(10, 0, 3, 16);
+            } else if (type === 'glass') {
+                ctx.fillStyle = 'rgba(224, 242, 254, 0.4)';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.fillRect(2, 12, 2, 2);
+                ctx.fillRect(11, 3, 3, 2);
+            } else if (type === 'gold') {
+                ctx.fillStyle = '#f1c40f';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#f39c12';
+                ctx.fillRect(14, 0, 2, 16);
+                ctx.fillStyle = '#fcf2a0';
+                ctx.fillRect(2, 2, 6, 6);
+            } else if (type === 'dark') {
+                ctx.fillStyle = '#1a1126';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#3c245c';
+                ctx.fillRect(6, 2, 4, 4);
+            } else if (type === 'red_sus') {
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#b91c1c';
+                ctx.fillRect(0, 12, 16, 4);
+            } else if (type === 'blue_sus') {
+                ctx.fillStyle = '#3b82f6';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#1d4ed8';
+                ctx.fillRect(0, 12, 16, 4);
+            } else if (type === 'leaves') {
+                ctx.fillStyle = '#2d7d3d';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#1a5426';
+                ctx.fillRect(2, 2, 3, 3);
+                ctx.fillRect(10, 8, 4, 3);
+            } else if (type === 'water') {
+                /* 核心修復：使用完全不透明的基礎藍色，避免 double-alpha 造成的渲染穿透與黑化 Bug */
+                ctx.fillStyle = '#2e6fdb';
+                ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#4d8df5';
+                ctx.fillRect(0, 4, 16, 1.5);
+                ctx.fillRect(0, 12, 16, 1.5);
+                ctx.fillStyle = '#7eb2ff';
+                ctx.fillRect(4, 8, 4, 1);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            return texture;
+        }
+
+        function initProceduralMaterials() {
+            const dirtTex = generateMinecraftTexture('dirt');
+            const stoneTex = generateMinecraftTexture('stone');
+            const grassTopTex = generateMinecraftTexture('grass_top');
+            const grassSideTex = generateMinecraftTexture('grass_side');
+            const woodTex = generateMinecraftTexture('wood');
+            const glassTex = generateMinecraftTexture('glass');
+            const goldTex = generateMinecraftTexture('gold');
+            const darkTex = generateMinecraftTexture('dark');
+            const redSusTex = generateMinecraftTexture('red_sus');
+            const blueSusTex = generateMinecraftTexture('blue_sus');
+            const leavesTex = generateMinecraftTexture('leaves');
+            const waterTex = generateMinecraftTexture('water');
+
+            const sideMat = new THREE.MeshStandardMaterial({ map: grassSideTex, roughness: 0.95 });
+            const topMat = new THREE.MeshStandardMaterial({ map: grassTopTex, roughness: 0.9 });
+            const bottomMat = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.95 });
+            cachedMaterials[1] = [sideMat, sideMat, topMat, bottomMat, sideMat, sideMat];
+
+            cachedMaterials[2] = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.95 });
+            cachedMaterials[3] = new THREE.MeshStandardMaterial({ map: stoneTex, roughness: 0.8 });
+            cachedMaterials[4] = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.85 });
+            cachedMaterials[5] = new THREE.MeshStandardMaterial({ map: glassTex, roughness: 0.1, opacity: 0.5, transparent: true });
+            cachedMaterials[6] = new THREE.MeshStandardMaterial({ map: goldTex, roughness: 0.3, metalness: 0.2, emissive: 0x111100 });
+            cachedMaterials[7] = new THREE.MeshStandardMaterial({ map: darkTex, roughness: 0.5, metalness: 0.1 });
+            cachedMaterials[8] = new THREE.MeshStandardMaterial({ map: redSusTex, roughness: 0.7 });
+            cachedMaterials[9] = new THREE.MeshStandardMaterial({ map: blueSusTex, roughness: 0.7 });
+            cachedMaterials[10] = new THREE.MeshStandardMaterial({ map: leavesTex, roughness: 0.95 });
+            
+            /* 核心修復：水方塊加上 depthWrite: false，並移除貼圖本身的 Alpha 疊加，徹底根治水面黑色閃斑與排序雜點 */
+            cachedMaterials[11] = new THREE.MeshStandardMaterial({ 
+                map: waterTex, 
+                roughness: 0.1, 
+                opacity: 0.65, 
+                transparent: true,
+                depthWrite: false 
+            });
+        }
+
+        function create3DPixaxe() {
+            const group = new THREE.Group();
+            const cubeSize = 0.0125; 
+            const geom = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+            
+            const stickMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.95 }); 
+            const diamondMat = new THREE.MeshStandardMaterial({ color: 0x33ffff, roughness: 0.4, metalness: 0.7, emissive: 0x002d33 }); 
+            const borderMat = new THREE.MeshStandardMaterial({ color: 0x111115, roughness: 0.9 }); 
+            
+            for (let i = -7; i <= 2; i++) {
+                const stickMesh = new THREE.Mesh(geom, stickMat);
+                stickMesh.position.set(i * cubeSize, i * cubeSize, 0);
+                group.add(stickMesh);
+                
+                const b1 = new THREE.Mesh(geom, borderMat);
+                b1.position.set((i - 1) * cubeSize, i * cubeSize, 0);
+                group.add(b1);
+                const b2 = new THREE.Mesh(geom, borderMat);
+                b2.position.set(i * cubeSize, (i - 1) * cubeSize, 0);
+                group.add(b2);
+            }
+            
+            const headOffset = 3;
+            const headCoordinates = [
+                {x: 0, y: 0}, {x: 1, y: 1}, {x: -1, y: -1},
+                {x: 0, y: 1}, {x: -1, y: 2}, {x: -2, y: 3}, {x: -3, y: 4}, {x: -4, y: 4},
+                {x: 1, y: 0}, {x: 2, y: -1}, {x: 3, y: -2}, {x: 4, y: -3}, {x: 4, y: -4}
+            ];
+            
+            headCoordinates.forEach(coord => {
+                const hX = (headOffset + coord.x) * cubeSize;
+                const hY = (headOffset + coord.y) * cubeSize;
+                
+                const dMesh = new THREE.Mesh(geom, diamondMat);
+                dMesh.position.set(hX, hY, 0);
+                group.add(dMesh);
+                
+                const directions = [
+                    {dx: 1, dy: 0}, {dx: -1, dy: 0}, {dx: 0, dy: 1}, {dx: 0, dy: -1}
+                ];
+                directions.forEach(d => {
+                    const bx = hX + d.dx * cubeSize;
+                    const by = hY + d.dy * cubeSize;
+                    
+                    let isOccupied = false;
+                    group.children.forEach(c => {
+                        if (Math.abs(c.position.x - bx) < 0.001 && Math.abs(c.position.y - by) < 0.001) {
+                            isOccupied = true;
+                        }
+                    });
+                    if (!isOccupied) {
+                        const bMesh = new THREE.Mesh(geom, borderMat);
+                        bMesh.position.set(bx, by, 0);
+                        group.add(bMesh);
+                    }
+                });
+            });
+            
+            return group;
+        }
+
+        function init3D() {
+            const container = document.getElementById('game-container');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xb1e1fc); 
+            scene.fog = new THREE.FogExp2(0xb1e1fc, 0.012);
+
+            initProceduralMaterials();
+
+            blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+            particleGeometry = new THREE.BoxGeometry(0.24, 0.24, 0.24);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(16, 8, 16);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+            
+            // 啟用高端電影級 ACES 色彩對比映射
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.05;
+            
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.PointerLockControls(camera, document.body);
+
+            playBtn.addEventListener('click', () => {
+                controls.lock();
+                dismissBlocker();
+                initAmbientMusic();
+            });
+
+            function dismissBlocker() {
+                blocker.style.opacity = '0';
+                setTimeout(() => blocker.style.display = 'none', 300);
+            }
+
+            controls.addEventListener('lock', () => {
+                dismissBlocker();
+            });
+
+            controls.addEventListener('unlock', () => {
+                blocker.style.display = 'flex';
+                setTimeout(() => blocker.style.opacity = '1', 10);
+                resetBreakingState();
+            });
+
+            scene.add(controls.getObject());
+
+            // 設置環境光源 - 半球天空光
+            const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0xf5f5f4, 0.6); 
+            scene.add(hemiLight);
+
+            // 陽光平行光 (會隨時間動態旋轉模擬晝夜)
+            dirLight = new THREE.DirectionalLight(0xfffbeb, 1.1);
+            dirLight.position.set(25, 45, 15);
+            dirLight.castShadow = true;
+            dirLight.shadow.camera.top = 40;
+            dirLight.shadow.camera.bottom = -40;
+            dirLight.shadow.camera.left = -40;
+            dirLight.shadow.camera.right = 40;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 180;
+            dirLight.shadow.mapSize.width = 1024; 
+            dirLight.shadow.mapSize.height = 1024;
+            dirLight.shadow.bias = -0.0003; 
+            scene.add(dirLight);
+
+            // 麥塊經典選取方塊黑框
+            const selectionGeometry = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+            const selectionMaterial = new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.35
+            });
+            selectionBox = new THREE.Mesh(selectionGeometry, selectionMaterial);
+            scene.add(selectionBox);
+            selectionBox.visible = false;
+
+            // 3D 鑽石鎬
+            pickaxeGroup = create3DPixaxe();
+            camera.add(pickaxeGroup);
+            pickaxeGroup.position.set(0.24, -0.22, -0.42);
+            pickaxeGroup.rotation.set(0.1, -0.6, 0.4);
+
+            // 輔助地表底網格
+            const gridHelper = new THREE.GridHelper(200, 200, 0x475569, 0x334155);
+            gridHelper.position.y = -0.51;
+            scene.add(gridHelper);
+
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function setupControls() {
+            const onKeyDown = (event) => {
+                keysPressed[event.code] = true;
+                
+                const keyCode = event.keyCode;
+                if (keyCode >= 49 && keyCode <= 57) { 
+                    const idx = keyCode - 49;
+                    if (idx < blockTypes.length) {
+                        selectBlock(idx + 1);
+                    }
+                } else if (keyCode === 48) { // 數字鍵 0 選 樹葉
+                    selectBlock(10);
+                } else if (keyCode === 189) { // 鍵盤 - 鍵選 水方塊
+                    selectBlock(11);
+                }
+
+                // 觸發跳躍
+                if (event.code === 'Space') {
+                    handleJumpTrigger();
+                }
+
+                // F 鍵切換飛行
+                if (event.code === 'KeyF') {
+                    isFlying = !isFlying;
+                    velocity.y = 0; 
+                    showToast(isFlying ? "✈️ 飛行模式：已開啟" : "🥾 飛行模式：已關閉");
+                }
+
+                if (event.code === 'KeyM') {
+                    toggleMusic();
+                }
+            };
+
+            const onKeyUp = (event) => {
+                keysPressed[event.code] = false;
+            };
+
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            document.addEventListener('mousedown', (event) => {
+                if (blocker.style.display !== 'none') return;
+
+                if (event.button === 0) {
+                    buildBlock();
+                } else if (event.button === 2) {
+                    isRightMouseDown = true;
+                }
+            });
+
+            document.addEventListener('mouseup', (event) => {
+                if (event.button === 2) {
+                    resetBreakingState();
+                }
+            });
+
+            document.addEventListener('contextmenu', event => event.preventDefault());
+        }
+
+        function handleJumpTrigger() {
+            if (blocker.style.display !== 'none') return;
+            if (isFlying) return; 
+            if (isInWater) return; 
+
+            if (canJump || jumpCount < maxJumps) {
+                if (jumpCount === 0) {
+                    velocity.y = 10.5;
+                    canJump = false;
+                    playProceduralSFX('jump');
+                } else if (jumpCount === 1) {
+                    velocity.y = 9.0;
+                    showToast("✨ 二段跳！");
+                    playProceduralSFX('jump');
+                }
+                jumpCount++;
+            }
+        }
+
+        function playProceduralSFX(type) {
+            if (!audioCtx || isMusicMuted) return;
+
+            const now = audioCtx.currentTime;
+
+            if (type === 'break') {
+                // 模擬方塊崩碎的破裂木塊/石塊聲
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(140, now);
+                osc.frequency.exponentialRampToValueAtTime(10, now + 0.15);
+
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.16);
+
+            } else if (type === 'place') {
+                // 放置方塊的低沉撞擊聲 (Plop)
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(110, now);
+                osc.frequency.exponentialRampToValueAtTime(45, now + 0.12);
+
+                gain.gain.setValueAtTime(0.35, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.13);
+
+            } else if (type === 'click') {
+                // 切換物品欄的微弱高頻金屬聲
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1200, now);
+                osc.frequency.setValueAtTime(800, now + 0.02);
+
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.06);
+
+            } else if (type === 'jump') {
+                // 跳躍空氣摩擦聲
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(180, now);
+                osc.frequency.exponentialRampToValueAtTime(320, now + 0.15);
+
+                gain.gain.setValueAtTime(0.12, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.16);
+
+            } else if (type === 'footstep') {
+                // 走路踏步聲 (微弱短促低音)
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(75, now);
+                osc.frequency.exponentialRampToValueAtTime(30, now + 0.08);
+
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.09);
+            }
+        }
+
+        // 觸發鎬子揮擊動畫
+        function triggerSwing() {
+            isSwinging = true;
+            swingStartTime = performance.now();
+        }
+
+        function createVoxel(x, y, z, typeId, customMaterial = null) {
+            const key = `${x},${y},${z}`;
+            if (blocks[key]) return null; // 避免重複覆蓋
+
+            const type = blockTypes.find(t => t.id === typeId);
+            if (!type) return null;
+
+            const material = customMaterial || cachedMaterials[typeId];
+
+            const mesh = new THREE.Mesh(blockGeometry, material);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = typeId !== 5 && typeId !== 11; // 玻璃與水不遮擋/不投射陰影
+            mesh.receiveShadow = true;
+            mesh.userData = { gridX: x, gridY: y, gridZ: z, typeId: typeId };
+
+            scene.add(mesh);
+            blocks[key] = mesh;
+            return mesh;
+        }
+
+        function growTree(x, y, z) {
+            const trunkHeight = 4 + Math.floor(Math.random() * 2);
+            // 1. 生成橡木主幹
+            for (let h = 0; h < trunkHeight; h++) {
+                createVoxel(x, y + h, z, 4);
+            }
+            // 2. 生成葉片
+            const leafCenterY = y + trunkHeight - 1;
+            for (let lx = -2; lx <= 2; lx++) {
+                for (let ly = 0; ly <= 2; ly++) {
+                    for (let lz = -2; lz <= 2; lz++) {
+                        if (Math.abs(lx) === 2 && Math.abs(lz) === 2 && ly > 0) continue;
+                        
+                        const leafX = x + lx;
+                        const leafY = leafCenterY + ly;
+                        const leafZ = z + lz;
+                        const key = `${leafX},${leafY},${leafZ}`;
+                        
+                        if (!blocks[key]) {
+                            createVoxel(leafX, leafY, leafZ, 10);
+                        }
+                    }
+                }
+            }
+        }
+
+        function generateTerrain() {
+            const size = 48; 
+            const halfSize = size / 2;
+            const waterLevel = 0;
+
+            for (let x = -halfSize; x < halfSize; x++) {
+                for (let z = -halfSize; z < halfSize; z++) {
+                    let y = Math.floor((Math.sin(x * 0.12) + Math.cos(z * 0.12)) * 2.2) + 1;
+                    
+                    if (y >= waterLevel) {
+                        createVoxel(x, y, z, 1); // 草方塊
+                        createVoxel(x, y - 1, z, 2); // 泥土
+                        for (let d = y - 2; d >= -5; d--) {
+                            createVoxel(x, d, z, 3); // 石頭
+                        }
+
+                        const distToSpawn = Math.sqrt(Math.pow(x - 16, 2) + Math.pow(z - 16, 2));
+                        if (Math.random() < 0.018 && distToSpawn > 6) {
+                            growTree(x, y + 1, z);
+                        }
+                    } else {
+                        createVoxel(x, y, z, 2); 
+                        for (let d = y - 1; d >= -5; d--) {
+                            createVoxel(x, d, z, 3); 
+                        }
+                        for (let w = y + 1; w <= waterLevel; w++) {
+                            createVoxel(x, w, z, 11); // 水方塊
+                        }
+                    }
+                }
+            }
+
+            spawnVoxelSus(8, 3, 8, 0xef4444); 
+            spawnVoxelSus(-10, 3, -10, 0x3b82f6); 
+        }
+
+        let customColorMaterials = {};
+        function getCachedColorMaterial(colorHex) {
+            if (!customColorMaterials[colorHex]) {
+                customColorMaterials[colorHex] = new THREE.MeshLambertMaterial({ 
+                    color: colorHex, 
+                    roughness: 0.7 
+                });
+            }
+            return customColorMaterials[colorHex];
+        }
+
+        function spawnVoxelSus(centerX, baseY, centerZ, colorHex) {
+            const red = colorHex;
+            const darkRed = chromaDarken(colorHex, 0.25); 
+            const visorColor = 0xe0f2fe; 
+
+            // 取得玩家當前位置，計算船員要面向的方向
+            const playerPos = controls.getObject().position;
+            const diffX = playerPos.x - centerX;
+            const diffZ = playerPos.z - centerZ;
+            let dir = 'Z_POS'; 
+
+            if (Math.abs(diffX) > Math.abs(diffZ)) {
+                dir = (diffX > 0) ? 'X_POS' : 'X_NEG';
+            } else {
+                dir = (diffZ > 0) ? 'Z_POS' : 'Z_NEG';
+            }
+
+            const susVoxels = [
+                [-1, 0, 0, red], [-1, 0, -1, red],
+                [1, 0, 0, red], [1, 0, -1, red],
+                [-1, 1, 0, red], [-1, 1, -1, red],
+                [1, 1, 0, red], [1, 1, -1, red],
+                [0, 1, 0, red], [0, 1, -1, red],
+
+                [-1, 2, 0, red], [0, 2, 0, red], [1, 2, 0, red],
+                [-1, 2, -1, red], [0, 2, -1, red], [1, 2, -1, red],
+                [-1, 2, 1, red], [0, 2, 1, red], [1, 2, 1, red],
+                [-1, 2, -2, darkRed], [0, 2, -2, darkRed], [1, 2, -2, darkRed], 
+
+                [-1, 3, 0, red], [0, 3, 0, red], [1, 3, 0, red],
+                [-1, 3, -1, red], [0, 3, -1, red], [1, 3, -1, red],
+                [-1, 3, -2, darkRed], [0, 3, -2, darkRed], [1, 3, -2, darkRed],
+                [-1, 3, 1, visorColor], [0, 3, 1, visorColor], [1, 3, 1, visorColor],
+
+                [-1, 4, 0, red], [0, 4, 0, red], [1, 4, 0, red],
+                [-1, 4, -1, red], [0, 4, -1, red], [1, 4, -1, red],
+                [-1, 4, -2, darkRed], [0, 4, -2, darkRed], [1, 4, -2, darkRed],
+                [-1, 4, 1, visorColor], [0, 4, 1, visorColor], [1, 4, 1, visorColor],
+
+                [-1, 5, 0, red], [0, 5, 0, red], [1, 5, 0, red],
+                [-1, 5, -1, red], [0, 5, -1, red], [1, 5, -1, red],
+
+                [0, 6, 0, red], [0, 6, -1, red]
+            ];
+
+            susVoxels.forEach(vox => {
+                let rx = vox[0];
+                let rz = vox[2];
+
+                if (dir === 'Z_NEG') {
+                    rx = -vox[0];
+                    rz = -vox[2];
+                } else if (dir === 'X_POS') {
+                    rx = vox[2];
+                    rz = -vox[0];
+                } else if (dir === 'X_NEG') {
+                    rx = -vox[2];
+                    rz = vox[0];
+                }
+
+                const px = centerX + rx;
+                const py = baseY + vox[1];
+                const pz = centerZ + rz;
+                const colorVal = vox[3];
+
+                const key = `${px},${py},${pz}`;
+                if (!blocks[key]) {
+                    const mat = getCachedColorMaterial(colorVal);
+                    createVoxel(px, py, pz, 7, mat); 
+                }
+            });
+
+            showToast("🚨 一隻船員已被召喚並朝向你！");
+        }
+
+        function buildBlock() {
+            const raycaster = new THREE.Raycaster();
+            const center = new THREE.Vector2(0, 0);
+            raycaster.setFromCamera(center, camera);
+
+            const activeMeshes = Object.values(blocks);
+            const intersects = raycaster.intersectObjects(activeMeshes);
+
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                const target = intersect.object;
+                const normal = intersect.face.normal;
+
+                const newX = Math.round(target.position.x + normal.x);
+                const newY = Math.round(target.position.y + normal.y);
+                const newZ = Math.round(target.position.z + normal.z);
+
+                const playerPos = controls.getObject().position;
+                
+                const isOverlappingX = Math.abs(newX - playerPos.x) < (0.5 + playerRadius);
+                const isOverlappingZ = Math.abs(newZ - playerPos.z) < (0.5 + playerRadius);
+                const isOverlappingY = (newY >= Math.floor(playerPos.y - playerHeight)) && (newY <= Math.ceil(playerPos.y));
+
+                if (isOverlappingX && isOverlappingY && isOverlappingZ) {
+                    showToast("⚠️ 無法放置！會卡到您的身體。");
+                    return;
+                }
+
+                const currentType = blockTypes[selectedBlockIndex];
+
+                // 播放放置與揮手臂音效/動畫
+                playProceduralSFX('place');
+                triggerSwing();
+
+                if (currentType.isSus) {
+                    spawnVoxelSus(newX, newY, newZ, currentType.susColor);
+                } else {
+                    createVoxel(newX, newY, newZ, currentType.id);
+                }
+            }
+        }
+
+        function resetBreakingState() {
+            isRightMouseDown = false;
+            currentlyBreakingKey = null;
+            breakProgress = 0;
+            document.getElementById('break-progress-container').classList.add('hidden');
+        }
+
+        function processVoxelBreaking(clampedDelta) {
+            if (!isRightMouseDown) {
+                resetBreakingState();
+                return;
+            }
+
+            const raycaster = new THREE.Raycaster();
+            const center = new THREE.Vector2(0, 0);
+            raycaster.setFromCamera(center, camera);
+
+            const activeMeshes = Object.values(blocks);
+            const intersects = raycaster.intersectObjects(activeMeshes);
+
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                const target = intersect.object;
+                const gx = target.userData.gridX;
+                const gy = target.userData.gridY;
+                const gz = target.userData.gridZ;
+                const key = `${gx},${gy},${gz}`;
+
+                if (currentlyBreakingKey !== key) {
+                    currentlyBreakingKey = key;
+                    breakProgress = 0;
+                    document.getElementById('break-progress-container').classList.remove('hidden');
+                }
+
+                breakProgress += clampedDelta / breakDuration;
+
+                // 鎬子晃動敲擊
+                triggerSwing();
+
+                const circle = document.getElementById('break-progress-circle');
+                const offset = 100.5 * (1 - Math.min(breakProgress, 1));
+                circle.style.strokeDashoffset = offset;
+
+                if (breakProgress >= 1) {
+                    playProceduralSFX('break');
+                    spawnBreakParticles(target);
+
+                    scene.remove(target);
+                    if (target.geometry) target.geometry.dispose();
+                    if (Array.isArray(target.material)) {
+                        target.material.forEach(m => m.dispose());
+                    } else if (target.material) {
+                        target.material.dispose();
+                    }
+                    
+                    const blockKey = `${gx},${gy},${gz}`;
+                    delete blocks[blockKey];
+
+                    resetBreakingState();
+                }
+            } else {
+                resetBreakingState();
+            }
+        }
+
+        let cachedParticleMaterials = {};
+        function getCachedParticleMaterial(hexColor) {
+            if (!cachedParticleMaterials[hexColor]) {
+                cachedParticleMaterials[hexColor] = new THREE.MeshLambertMaterial({
+                    color: hexColor,
+                    roughness: 0.95
+                });
+            }
+            return cachedParticleMaterials[hexColor];
+        }
+
+        function spawnBreakParticles(voxelMesh) {
+            const count = 12; 
+            const pos = voxelMesh.position;
+
+            let particleColor = 0x866043; 
+            if (Array.isArray(voxelMesh.material)) {
+                particleColor = voxelMesh.material[2].color ? voxelMesh.material[2].color.getHex() : 0x5b8731;
+            } else if (voxelMesh.material && voxelMesh.material.color) {
+                particleColor = voxelMesh.material.color.getHex();
+            }
+
+            const material = getCachedParticleMaterial(particleColor);
+
+            for (let i = 0; i < count; i++) {
+                const mesh = new THREE.Mesh(particleGeometry, material);
+                
+                mesh.position.set(
+                    pos.x + (Math.random() - 0.5) * 0.6,
+                    pos.y + (Math.random() - 0.5) * 0.6,
+                    pos.z + (Math.random() - 0.5) * 0.6
+                );
+
+                mesh.castShadow = false;
+                mesh.receiveShadow = false;
+                scene.add(mesh);
+
+                activeParticles.push({
+                    mesh: mesh,
+                    velocity: new THREE.Vector3(
+                        (Math.random() - 0.5) * 3.8,
+                        Math.random() * 3.5 + 2.0,
+                        (Math.random() - 0.5) * 3.8
+                    ),
+                    lifetime: 0.7 + Math.random() * 0.3
+                });
+            }
+        }
+
+        function updateParticles(clampedDelta) {
+            for (let i = activeParticles.length - 1; i >= 0; i--) {
+                const p = activeParticles[i];
+                p.lifetime -= clampedDelta;
+
+                if (p.lifetime <= 0) {
+                    scene.remove(p.mesh);
+                    activeParticles.splice(i, 1);
+                } else {
+                    p.mesh.position.addScaledVector(p.velocity, clampedDelta);
+                    p.velocity.y -= 9.8 * 3.5 * clampedDelta; 
+                    const ratio = Math.max(p.lifetime / 1.0, 0);
+                    p.mesh.scale.set(ratio, ratio, ratio); 
+                }
+            }
+        }
+
+        function checkCollisionAt(posX, posY, posZ) {
+            const minX = posX - playerRadius;
+            const maxX = posX + playerRadius;
+            const minZ = posZ - playerRadius;
+            const maxZ = posZ + playerRadius;
+            
+            const minY = posY - playerHeight + 0.15; 
+            const maxY = posY - 0.05; 
+
+            const fromX = Math.floor(minX + 0.5);
+            const toX = Math.floor(maxX + 0.5);
+            const fromY = Math.floor(minY + 0.5);
+            const toY = Math.floor(maxY + 0.5);
+            const fromZ = Math.floor(minZ + 0.5);
+            const toZ = Math.floor(maxZ + 0.5);
+
+            for (let x = fromX; x <= toX; x++) {
+                for (let y = fromY; y <= toY; y++) {
+                    for (let z = fromZ; z <= toZ; z++) {
+                        const block = blocks[`${x},${y},${z}`];
+                        if (block) {
+                            if (block.userData.typeId === 11) continue; // 水不碰撞
+                            return true; 
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+            const clampedDelta = Math.min(delta, 0.1);
+
+            // --- 晝夜交替大氣模擬 ---
+            dayTime += clampedDelta / dayLength;
+            if (dayTime > 1.0) dayTime = 0.0;
+
+            const angle = dayTime * Math.PI * 2;
+            const sunY = Math.sin(angle);
+            const sunX = Math.cos(angle);
+
+            // 計算太陽軌跡位置
+            dirLight.position.set(sunX * 50, sunY * 50, 20);
+
+            // 動態更換天空與霧氣色澤 (朝正統麥塊看齊)
+            let skyColor, fogColor, sunIntensity;
+            if (sunY > 0.1) {
+                // 白天
+                skyColor = new THREE.Color(0xb1e1fc);
+                fogColor = new THREE.Color(0xb1e1fc);
+                sunIntensity = 1.1;
+                dirLight.color.setHex(0xfffbeb);
+            } else if (sunY <= 0.1 && sunY > -0.15) {
+                // 黃昏 / 黎明
+                const t = (sunY + 0.15) / 0.25;
+                skyColor = new THREE.Color().lerpColors(new THREE.Color(0x311a36), new THREE.Color(0xfb923c), t);
+                fogColor = skyColor.clone();
+                sunIntensity = t * 1.1;
+                dirLight.color.setHex(0xf87171);
+            } else {
+                // 夜晚
+                skyColor = new THREE.Color(0x060814);
+                fogColor = new THREE.Color(0x060814);
+                sunIntensity = 0.1; // 微弱月光
+                dirLight.color.setHex(0xa5b4fc);
+            }
+
+            scene.background = skyColor;
+            scene.fog.color = fogColor;
+            dirLight.intensity = sunIntensity;
+
+            if (blocker.style.display === 'none') {
+                processVoxelBreaking(clampedDelta);
+            }
+
+            updateParticles(clampedDelta);
+
+            if (blocker.style.display === 'none') {
+                const playerObj = controls.getObject();
+
+                // 檢測是否浸在水中
+                const pX = Math.round(playerObj.position.x);
+                const pY = Math.floor(playerObj.position.y - playerHeight + 0.5);
+                const pZ = Math.round(playerObj.position.z);
+                const standingKey = `${pX},${pY},${pZ}`;
+                isInWater = blocks[standingKey] && blocks[standingKey].userData.typeId === 11;
+
+                // --- 水底視覺與 muffled 聲學控制 ---
+                const headY = Math.floor(playerObj.position.y);
+                const headKey = `${pX},${headY},${pZ}`;
+                const headInWaterNow = blocks[headKey] && blocks[headKey].userData.typeId === 11;
+
+                if (headInWaterNow !== isHeadInWater) {
+                    isHeadInWater = headInWaterNow;
+                    const underwaterOverlay = document.getElementById('underwater-overlay');
+                    if (isHeadInWater) {
+                        // 觸發水底特效
+                        underwaterOverlay.classList.remove('hidden');
+                        scene.fog.density = 0.09; // 加深水下霧氣
+                        scene.fog.color.setHex(0x1d4ed8);
+                        
+                        // muffled 沉悶音效：將低通濾波頻率降低到 200Hz以下
+                        if (musicLowpassFilter) {
+                            musicLowpassFilter.frequency.setTargetAtTime(190, audioCtx.currentTime, 0.4);
+                        }
+                    } else {
+                        // 復原空氣中視覺與常規音頻
+                        underwaterOverlay.classList.add('hidden');
+                        scene.fog.density = 0.012;
+                        
+                        if (musicLowpassFilter) {
+                            musicLowpassFilter.frequency.setTargetAtTime(750, audioCtx.currentTime, 0.3);
+                        }
+                    }
+                }
+
+                isSneaking = keysPressed['ShiftLeft'] || keysPressed['ShiftRight'] || false;
+                
+                const targetHeight = isSneaking && !isFlying ? 1.25 : 1.6;
+                playerHeight = THREE.MathUtils.lerp(playerHeight, targetHeight, 15 * clampedDelta);
+
+                // 阻力
+                velocity.x -= velocity.x * 10.0 * clampedDelta;
+                velocity.z -= velocity.z * 10.0 * clampedDelta;
+
+                if (!isFlying) {
+                    if (isInWater) {
+                        velocity.y -= 9.8 * 1.5 * clampedDelta;
+                        if (keysPressed['Space']) {
+                            velocity.y = 3.0; // 水中游泳上升
+                        }
+                    } else {
+                        velocity.y -= 9.8 * 4.0 * clampedDelta; 
+                    }
+                } else {
+                    velocity.y -= velocity.y * 12.0 * clampedDelta;
+                    if (keysPressed['Space']) {
+                        velocity.y = 6.0;
+                    } else if (isSneaking) {
+                        velocity.y = -6.0;
+                    }
+                }
+
+                direction.z = Number(keysPressed['KeyW'] || false) - Number(keysPressed['KeyS'] || false);
+                direction.x = Number(keysPressed['KeyD'] || false) - Number(keysPressed['KeyA'] || false);
+                direction.normalize();
+
+                let currentSpeed = 150.0;
+                if (isSneaking && !isFlying) {
+                    currentSpeed = 45.0; 
+                } else if (isFlying) {
+                    currentSpeed = 220.0; 
+                } else if (isInWater) {
+                    currentSpeed = 70.0; 
+                }
+
+                if (keysPressed['KeyW'] || keysPressed['KeyS']) velocity.z -= direction.z * currentSpeed * clampedDelta;
+                if (keysPressed['KeyA'] || keysPressed['KeyD']) velocity.x -= direction.x * currentSpeed * clampedDelta;
+
+                // --- 播放奔跑腳步聲 ---
+                const isMovingOnGround = canJump && (Math.abs(velocity.x) > 1.0 || Math.abs(velocity.z) > 1.0) && !isFlying && !isInWater;
+                if (isMovingOnGround && time - lastFootstepTime > (isSneaking ? 550 : 320)) {
+                    playProceduralSFX('footstep');
+                    lastFootstepTime = time;
+                }
+
+                // 1. 垂直 Y 軸移動
+                playerObj.position.y += (velocity.y * clampedDelta);
+
+                const currentPX = Math.round(playerObj.position.x);
+                const currentPZ = Math.round(playerObj.position.z);
+                const footY = Math.floor(playerObj.position.y - playerHeight);
+                const solidStandingKey = `${currentPX},${footY},${currentPZ}`;
+
+                if (!isFlying) {
+                    const landBlock = blocks[solidStandingKey];
+                    const isLandSolid = landBlock && landBlock.userData.typeId !== 11;
+                    
+                    if (velocity.y <= 0 && isLandSolid) {
+                        velocity.y = 0;
+                        playerObj.position.y = footY + playerHeight + 0.5; 
+                        canJump = true;
+                        jumpCount = 0; 
+                    } else {
+                        if (playerObj.position.y < playerHeight) {
+                            velocity.y = 0;
+                            playerObj.position.y = playerHeight;
+                            canJump = true;
+                            jumpCount = 0; 
+                        }
+                    }
+                }
+
+                // 2. 水平 X 與 Z 軸 AABB 碰撞阻擋 & 自動跳躍 (Auto-jump)
+                const previousPosition = playerObj.position.clone();
+
+                const camDir = new THREE.Vector3();
+                playerObj.getWorldDirection(camDir);
+                camDir.y = 0;
+                camDir.normalize();
+
+                const camRight = new THREE.Vector3();
+                camRight.crossVectors(camDir, camera.up).normalize();
+
+                const moveZStep = -velocity.z * clampedDelta;
+                const moveXStep = -velocity.x * clampedDelta;
+
+                let blockedX = false;
+                let blockedZ = false;
+
+                // 預測 X 移動
+                const testPosX = previousPosition.x + (camRight.x * moveXStep) + (camDir.x * moveZStep);
+                if (!checkCollisionAt(testPosX, playerObj.position.y, playerObj.position.z)) {
+                    playerObj.position.x = testPosX;
+                } else {
+                    blockedX = true;
+                    velocity.x = 0;
+                }
+
+                // 預測 Z 移動
+                const testPosZ = previousPosition.z + (camRight.z * moveXStep) + (camDir.z * moveZStep);
+                if (!checkCollisionAt(playerObj.position.x, playerObj.position.y, testPosZ)) {
+                    playerObj.position.z = testPosZ;
+                } else {
+                    blockedZ = true;
+                    velocity.z = 0;
+                }
+
+                // 前方遇到一格方塊「自動跳躍」機制
+                if ((blockedX || blockedZ) && canJump && !isFlying && !isSneaking && !isInWater) {
+                    const targetX = blockedX ? testPosX : playerObj.position.x;
+                    const targetZ = blockedZ ? testPosZ : playerObj.position.z;
+                    
+                    if (!checkCollisionAt(targetX, playerObj.position.y + 1.2, targetZ)) {
+                        velocity.y = 12.0; 
+                        canJump = false;
+                        playProceduralSFX('jump');
+                    }
+                }
+
+                // --- 3. 麥塊經典選取方塊高光線框 raycast ---
+                const raycaster = new THREE.Raycaster();
+                const center = new THREE.Vector2(0, 0);
+                raycaster.setFromCamera(center, camera);
+                const activeMeshes = Object.values(blocks);
+                const intersects = raycaster.intersectObjects(activeMeshes);
+
+                if (intersects.length > 0) {
+                    const intersect = intersects[0];
+                    selectionBox.position.copy(intersect.object.position);
+                    selectionBox.visible = true;
+                } else {
+                    selectionBox.visible = false;
+                }
+
+                // --- 4. 鑽石鎬晃動與揮擊手部動畫 ---
+                if (pickaxeGroup) {
+                    if (isSwinging) {
+                        const elapsed = time - swingStartTime;
+                        const duration = 180; // 快速反饋敲擊
+                        if (elapsed > duration) {
+                            isSwinging = false;
+                        } else {
+                            const ratio = elapsed / duration;
+                            const swingAngle = Math.sin(ratio * Math.PI) * 0.9;
+                            
+                            pickaxeGroup.position.set(
+                                0.24 - swingAngle * 0.1, 
+                                -0.22 + swingAngle * 0.08, 
+                                -0.42 + swingAngle * 0.12
+                            );
+                            pickaxeGroup.rotation.set(
+                                0.1 + swingAngle * 1.5, 
+                                -0.6 - swingAngle * 0.3, 
+                                0.4 + swingAngle * 0.8
+                            );
+                        }
+                    } else {
+                        const velocityLength = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+                        const bobbing = velocityLength > 0.1 ? Math.sin(time * 0.009) * 0.012 : 0;
+                        const sway = velocityLength > 0.1 ? Math.cos(time * 0.004) * 0.008 : 0;
+                        
+                        const sneakYOffset = isSneaking && !isFlying ? -0.06 : 0;
+                        pickaxeGroup.position.set(0.24 + sway, -0.22 + bobbing + sneakYOffset, -0.42);
+                        pickaxeGroup.rotation.set(0.1, -0.6, 0.4);
+                    }
+                }
+            }
+
+            prevTime = time;
+            renderer.render(scene, camera);
+        }
+
+        function initAmbientMusic() {
+            if (musicStarted) return;
+            musicStarted = true;
+
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                masterGainNode = audioCtx.createGain();
+                masterGainNode.gain.setValueAtTime(0.12, audioCtx.currentTime); 
+
+                // 低通濾波器：減少高頻，讓音色溫潤如水、像柔軟的黏土 (水底會動態調低)
+                musicLowpassFilter = audioCtx.createBiquadFilter();
+                musicLowpassFilter.type = 'lowpass';
+                musicLowpassFilter.frequency.setValueAtTime(750, audioCtx.currentTime);
+
+                // 延遲/空間反饋效果器：製造 C418 的空靈深沉迴音
+                const delay = audioCtx.createDelay(2.0);
+                delay.delayTime.setValueAtTime(0.85, audioCtx.currentTime);
+                const feedback = audioCtx.createGain();
+                feedback.gain.setValueAtTime(0.35, audioCtx.currentTime);
+
+                musicLowpassFilter.connect(masterGainNode);
+                musicLowpassFilter.connect(delay);
+                delay.connect(feedback);
+                feedback.connect(delay);
+                delay.connect(masterGainNode);
+
+                masterGainNode.connect(audioCtx.destination);
+
+                // 啟動主和弦循環播放
+                playAmbientChordProgression(musicLowpassFilter);
+            } catch (e) {
+                console.warn("瀏覽器不支援 Web Audio API 或其已遭封鎖：", e);
+            }
+        }
+
+        const chords = [
+            [130.81, 164.81, 196.00, 246.94, 293.66], // Cmaj9 (C3, E3, G3, B3, D4)
+            [174.61, 220.00, 261.63, 329.63, 392.00], // Fmaj7 (F3, A3, C4, E4, G4)
+            [110.00, 146.83, 196.00, 220.00, 293.66], // Am9 (A2, D3, G3, A3, D4)
+            [98.00,  146.83, 196.00, 246.94, 293.66]  // G6 (G2, D3, G3, B3, D4)
+        ];
+
+        function playAmbientChordProgression(destinationNode) {
+            let chordIndex = 0;
+
+            function playNext() {
+                if (isMusicMuted || !audioCtx) {
+                    setTimeout(playNext, 12000);
+                    return;
+                }
+
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+
+                const now = audioCtx.currentTime;
+                const chord = chords[chordIndex];
+                const selectedNotes = chord.filter(() => Math.random() > 0.25);
+
+                selectedNotes.forEach((freq, idx) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+
+                    osc.type = Math.random() > 0.5 ? 'sine' : 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.18); 
+
+                    gain.gain.setValueAtTime(0, now);
+                    gain.gain.linearRampToValueAtTime(0.07, now + 2.0 + Math.random() * 1.5);
+                    gain.gain.setValueAtTime(0.07, now + 5.5);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, now + 10.0 + Math.random() * 2.0);
+
+                    osc.connect(gain);
+                    gain.connect(destinationNode);
+
+                    osc.start(now);
+                    osc.stop(now + 13.0);
+                });
+
+                chordIndex = (chordIndex + 1) % chords.length;
+                const nextDelay = 11500 + Math.random() * 3500;
+                setTimeout(playNext, nextDelay);
+            }
+
+            playNext();
+        }
+
+        function toggleMusic() {
+            if (!audioCtx) {
+                initAmbientMusic();
+                return;
+            }
+
+            isMusicMuted = !isMusicMuted;
+            if (masterGainNode) {
+                const targetGain = isMusicMuted ? 0 : 0.12;
+                masterGainNode.gain.setTargetAtTime(targetGain, audioCtx.currentTime, 0.5);
+            }
+            showToast(isMusicMuted ? "🔇 背景音樂：已靜音" : "🔊 背景音樂：已開啟 🎵");
+        }
+
+        function chromaDarken(hex, percent) {
+            const r = (hex >> 16) & 0xFF;
+            const g = (hex >> 8) & 0xFF;
+            const b = hex & 0xFF;
+            return ((Math.floor(r * (1 - percent)) << 16) | (Math.floor(g * (1 - percent)) << 8) | Math.floor(b * (1 - percent)));
+        }
+
+        window.onload = function() {
+            blocker = document.getElementById('blocker');
+            playBtn = document.getElementById('playBtn');
+
+            init3D();
+            setupControls();
+            generateTerrain();
+            animate();
+            renderHotbar();
+        }
+    </script>
+</body>
+</html>
